@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Images and Video Previewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="sidebar">
+    <div id="header-controls">
+        <div class="toolbar">
+            <input type="file" id="file-input" multiple style="display:none">
+            <button class="btn-open" onclick="document.getElementById('file-input').click()">📂 Open File</button>
+        </div>
+        <input type="text" id="search-bar" placeholder="Search files...">
+        <div class="filter-group">
+            <label><input type="radio" name="filter" value="all" checked> All</label>
+            <label><input type="radio" name="filter" value="images"> 🖼️ Images</label>
+            <label><input type="radio" name="filter" value="videos"> 🎬 Videos</label>
+        </div>
+    </div>
+    <div id="tree-container">
+        <div id="tree"></div>
+    </div>
+</div>
+
+<div id="resizer"></div>
+
+<div id="preview" class="empty-msg">
+    <p id="previewText">Preview Here</p>
+    <p id="watermark"></p>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
