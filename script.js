@@ -140,6 +140,8 @@ function showPreview(blob, name, fileElement = null) {
 function updateNavButtons() {
     const prevBtn = document.getElementById('prev-btn');
     const nextBtn = document.getElementById('next-btn');
+    
+    // Only try to disable them if they actually exist in the HTML
     if (prevBtn) prevBtn.disabled = currentIndex <= 0;
     if (nextBtn) nextBtn.disabled = currentIndex === -1 || currentIndex >= currentFileList.length - 1;
 }
@@ -313,20 +315,6 @@ async function reloadTree() {
         updateNavButtons();
     }, 100);
 }
-
-document.getElementById('prev-btn').onclick = () => {
-    if (currentIndex > 0) {
-        currentFileList[currentIndex - 1].click();
-        currentFileList[currentIndex - 1].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-};
-
-document.getElementById('next-btn').onclick = () => {
-    if (currentIndex < currentFileList.length - 1) {
-        currentFileList[currentIndex + 1].click();
-        currentFileList[currentIndex + 1].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-};
 
 function initResizer() {
     const doResize = (clientX) => {
