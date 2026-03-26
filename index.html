@@ -12,7 +12,10 @@
     <div id="header-controls">
         <div class="toolbar">
             <input type="file" id="file-input" multiple style="display:none">
-            <button class="btn-open" onclick="document.getElementById('file-input').click()">📂 Open File</button>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn-open" onclick="document.getElementById('file-input').click()">📂 Open File</button>
+                <button id="btn-mute" class="btn-mute" title="Toggle Mute">🔇</button>
+            </div>
         </div>
         <input type="text" id="search-bar" placeholder="Search files...">
         <div class="filter-group">
@@ -33,6 +36,7 @@
     <p id="watermark"></p>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@zip.js/zip.js@2.7.53/dist/zip.min.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
