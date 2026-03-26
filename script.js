@@ -3,29 +3,30 @@ const preview = document.getElementById("preview");
 const resizer = document.getElementById("resizer");
 const searchBar = document.getElementById("search-bar");
 const sidebar = document.getElementById("sidebar");
+const muteBtn = document.getElementById("btn-mute");
 
 let rootEntries = [];
+let currentFileList = []; 
+let currentIndex = -1;    
 const expandedPaths = new Set();
 let currentPreviewUrl = null;
+let isMuted = true; 
 
 // Media Type Definitions
 const EXT_IMG = /\.(jpe?g|png|gif|webp|bmp|svg|avif)$/i;
 const EXT_VID = /\.(mp4|webm|ogv|mov|m4v|mkv|avi)$/i;
 const EXT_AUD = /\.(mp3|wav|flac|aac|ogg|m4a)$/i;
 
-let isMuted = true; // Defaulting to true for better mobile autoplay compatibility
-const muteBtn = document.getElementById("btn-mute");
+// ─────────────────────────────────────────────
+// TOOLBAR LOGIC
+// ─────────────────────────────────────────────
 
 muteBtn.onclick = () => {
     isMuted = !isMuted;
     muteBtn.classList.toggle("is-muted", isMuted);
     muteBtn.textContent = isMuted ? "🔇" : "🔊";
-
-    // If a video/audio is currently playing, update it live!
     const mediaEl = preview.querySelector("video, audio");
-    if (mediaEl) {
-        mediaEl.muted = isMuted;
-    }
+    if (mediaEl) mediaEl.muted = isMuted;
 };
 
 function isMedia(name) { 
@@ -50,7 +51,7 @@ function shouldDisplay(name) {
 }
 
 // ─────────────────────────────────────────────
-// PREVIEW & MEMORY MANAGEMENT
+// PREVIEW & NAVIGATION
 // ─────────────────────────────────────────────
 
 function clearPreview() {
@@ -58,16 +59,27 @@ function clearPreview() {
     oldMedia.forEach(el => el.remove());
     const introText = document.getElementById("previewText");
     if (introText) introText.style.display = "block";
+    currentIndex = -1;
+    updateNavButtons();
 }
 
-function showPreview(blob, name) {
+// FIXED: Added 'fileElement' to parameters
+function showPreview(blob, name, fileElement = null) {
     if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
 
     const introText = document.getElementById("previewText");
     if (introText) introText.style.display = "none";
 
-    const oldMedia = preview.querySelectorAll("video, img, audio, .status-msg, .error-div");
-    oldMedia.forEach(el => el.remove());
+    // Clear old content
+    preview.innerHTML = "";
+
+    // Manage Selection Highlighting
+    document.querySelectorAll('.file.selected').forEach(el => el.classList.remove('selected'));
+    if (fileElement) {
+        fileElement.classList.add('selected');
+        currentIndex = currentFileList.indexOf(fileElement);
+        // We don't need updateNavButtons() anymore if you remove the bottom buttons
+    }
 
     const fileName = name.toLowerCase();
     let mimeType = "";
@@ -79,25 +91,45 @@ function showPreview(blob, name) {
 
     currentPreviewUrl = URL.createObjectURL(blob.slice(0, blob.size, mimeType));
     
-    let el;
+    // Create Wrapper
+    const container = document.createElement("div");
+    container.className = "media-container";
+
+    let mediaEl;
     if (EXT_IMG.test(fileName)) {
-        el = document.createElement("img");
+        mediaEl = document.createElement("img");
     } else if (EXT_VID.test(fileName)) {
-        el = document.createElement("video");
-        el.controls = true;
-        el.autoplay = true; 
-        el.muted = isMuted; // Use the global state instead of 'true'
-        el.style.width = "100%";
+        mediaEl = document.createElement("video");
+        mediaEl.controls = true;
+        mediaEl.autoplay = true; 
+        mediaEl.muted = isMuted; 
+        mediaEl.style.width = "100%";
     } else if (EXT_AUD.test(fileName)) {
-        el = document.createElement("audio");
-        el.controls = true;
-        el.autoplay = true; 
-        el.muted = isMuted; // Use the global state
+        mediaEl = document.createElement("audio");
+        mediaEl.controls = true;
+        mediaEl.autoplay = true; 
+        mediaEl.muted = isMuted; 
     }
 
-    if (el) {
-        el.src = currentPreviewUrl;
-        preview.appendChild(el);
+    if (mediaEl) {
+        mediaEl.src = currentPreviewUrl;
+        
+        // Create Hover Buttons
+        const prevBtn = document.createElement("button");
+        prevBtn.className = "hover-nav hover-prev";
+        prevBtn.innerHTML = "‹";
+        prevBtn.disabled = currentIndex <= 0;
+        prevBtn.onclick = (e) => { e.stopPropagation(); currentFileList[currentIndex - 1].click(); };
+
+        const nextBtn = document.createElement("button");
+        nextBtn.className = "hover-nav hover-next";
+        nextBtn.innerHTML = "›";
+        nextBtn.disabled = currentIndex >= currentFileList.length - 1;
+        nextBtn.onclick = (e) => { e.stopPropagation(); currentFileList[currentIndex + 1].click(); };
+
+        container.append(prevBtn, mediaEl, nextBtn);
+        preview.appendChild(container);
+
         const cap = document.createElement("div");
         cap.className = "status-msg";
         cap.textContent = name.split("/").pop();
@@ -105,31 +137,26 @@ function showPreview(blob, name) {
     }
 }
 
+function updateNavButtons() {
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    if (prevBtn) prevBtn.disabled = currentIndex <= 0;
+    if (nextBtn) nextBtn.disabled = currentIndex === -1 || currentIndex >= currentFileList.length - 1;
+}
+
 // ─────────────────────────────────────────────
-// LARGE FILE ARCHIVE LOGIC (zip.js)
+// ARCHIVE & FILE SYSTEM
 // ─────────────────────────────────────────────
 
 async function loadZipArchive(file, name, type) {
-    // BlobReader allows random access without loading the 2GB+ file into RAM
     const reader = new zip.ZipReader(new zip.BlobReader(file));
-    
     try {
         const entries = await reader.getEntries();
         const allPaths = entries.filter(e => !e.directory).map(e => e.filename);
-
-        rootEntries.push({ 
-            _type: "archive", 
-            archiveType: type, 
-            name: name,
-            fullPath: name, 
-            zipReader: reader, 
-            entries: entries,
-            allPaths: allPaths
-        });
+        rootEntries.push({ _type: "archive", archiveType: type, name, fullPath: name, zipReader: reader, entries, allPaths });
         reloadTree();
     } catch (err) {
-        console.error("Archive Error:", err);
-        alert("Failed to read " + type + ". Ensure it is a valid zip/apk.");
+        alert("Failed to read " + type);
     }
 }
 
@@ -168,7 +195,6 @@ function renderArchiveNodeHierarchical(archive, parentEl) {
             renderVirtualFolder(virtualTree, content, 1, archive);
         }
     };
-
     if (isExpanded) renderVirtualFolder(virtualTree, content, 1, archive);
     container.append(header, content);
     parentEl.appendChild(container);
@@ -201,15 +227,14 @@ function renderVirtualFolder(vFolder, containerEl, level, archive) {
         item.innerHTML = `<span>${getIcon(path)}</span><span>${path.split('/').pop()}</span>`;
         item.onclick = async () => {
             const entry = archive.entries.find(e => e.filename === path);
-            if (entry) showPreview(await entry.getData(new zip.BlobWriter()), path);
+            if (entry) {
+                const blob = await entry.getData(new zip.BlobWriter());
+                showPreview(blob, path, item);
+            }
         };
         containerEl.appendChild(item);
     });
 }
-
-// ─────────────────────────────────────────────
-// NATIVE FILE SYSTEM & DROPS
-// ─────────────────────────────────────────────
 
 async function renderEntry(entry, parentEl, level) {
     const pathKey = entry.fullPath || entry.name;
@@ -257,15 +282,74 @@ async function renderEntry(entry, parentEl, level) {
                 rootEntries = rootEntries.filter(en => en !== entry);
                 clearPreview(); reloadTree(); return;
             }
-            showPreview(f, f.name);
+            showPreview(f, f.name, el); // Pass 'el' for highlighting
         };
         parentEl.appendChild(el);
     }
 }
 
+// ─────────────────────────────────────────────
+// EVENTS & INIT
+// ─────────────────────────────────────────────
+
+async function reloadTree() {
+    tree.innerHTML = "";
+    if (rootEntries.length === 0) {
+        tree.innerHTML = '<div class="empty-msg">Drop files or use Open File</div>';
+        currentFileList = [];
+        updateNavButtons();
+        return;
+    }
+    for (const entry of rootEntries) {
+        if (entry._type === "archive") renderArchiveNodeHierarchical(entry, tree);
+        else await renderEntry(entry, tree, 0);
+    }
+
+    setTimeout(() => {
+        currentFileList = Array.from(tree.querySelectorAll('.file'));
+        // Find if any currently selected file is still in the list
+        const selected = tree.querySelector('.file.selected');
+        currentIndex = selected ? currentFileList.indexOf(selected) : -1;
+        updateNavButtons();
+    }, 100);
+}
+
+document.getElementById('prev-btn').onclick = () => {
+    if (currentIndex > 0) {
+        currentFileList[currentIndex - 1].click();
+        currentFileList[currentIndex - 1].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+};
+
+document.getElementById('next-btn').onclick = () => {
+    if (currentIndex < currentFileList.length - 1) {
+        currentFileList[currentIndex + 1].click();
+        currentFileList[currentIndex + 1].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+};
+
+function initResizer() {
+    const doResize = (clientX) => {
+        if (clientX > 50 && clientX < window.innerWidth * 0.9) sidebar.style.width = clientX + "px";
+    };
+    resizer.onmousedown = () => {
+        document.onmousemove = e => doResize(e.clientX);
+        document.onmouseup = () => document.onmousemove = null;
+    };
+    resizer.addEventListener('touchstart', (e) => {
+        e.preventDefault(); 
+        const move = (te) => doResize(te.touches[0].clientX);
+        const end = () => {
+            document.removeEventListener('touchmove', move);
+            document.removeEventListener('touchend', end);
+        };
+        document.addEventListener('touchmove', move, { passive: false });
+        document.addEventListener('touchend', end);
+    }, { passive: false });
+}
+
 async function handleFileSelect(e) {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
     for (const file of files) {
         const ext = file.name.split('.').pop().toLowerCase();
         if (ext === "zip" || ext === "apk") await loadZipArchive(file, file.name, ext.toUpperCase());
@@ -289,47 +373,6 @@ async function handleDrop(e) {
         }
     }
     reloadTree();
-}
-
-async function reloadTree() {
-    tree.innerHTML = "";
-    if (rootEntries.length === 0) {
-        tree.innerHTML = '<div class="empty-msg">Drop files or use Open File</div>';
-        return;
-    }
-    for (const entry of rootEntries) {
-        if (entry._type === "archive") renderArchiveNodeHierarchical(entry, tree);
-        else await renderEntry(entry, tree, 0);
-    }
-}
-
-// ─────────────────────────────────────────────
-// TOUCH RESIZER & INITIALIZATION
-// ─────────────────────────────────────────────
-
-function initResizer() {
-    const doResize = (clientX) => {
-        if (clientX > 50 && clientX < window.innerWidth * 0.9) {
-            sidebar.style.width = clientX + "px";
-        }
-    };
-
-    resizer.onmousedown = () => {
-        document.onmousemove = e => doResize(e.clientX);
-        document.onmouseup = () => document.onmousemove = null;
-    };
-
-    // Blocks refresh gesture ONLY when finger is on the resizer bar
-    resizer.addEventListener('touchstart', (e) => {
-        e.preventDefault(); 
-        const touchMoveHandler = (te) => doResize(te.touches[0].clientX);
-        const touchEndHandler = () => {
-            document.removeEventListener('touchmove', touchMoveHandler);
-            document.removeEventListener('touchend', touchEndHandler);
-        };
-        document.addEventListener('touchmove', touchMoveHandler, { passive: false });
-        document.addEventListener('touchend', touchEndHandler);
-    }, { passive: false });
 }
 
 document.getElementById('file-input').addEventListener('change', handleFileSelect);
