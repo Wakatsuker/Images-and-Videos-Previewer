@@ -317,20 +317,30 @@ function initResizer() {
         }
     };
 
+    // Mouse Events
     resizer.onmousedown = () => {
         document.onmousemove = e => doResize(e.clientX);
         document.onmouseup = () => document.onmousemove = null;
     };
 
+    // Touch Events for Android
     resizer.addEventListener('touchstart', (e) => {
-        const touchMoveHandler = (te) => doResize(te.touches[0].clientX);
+        // We only preventDefault here to stop the "bounce" 
+        // while the finger is actually on the resizer bar.
+        e.preventDefault(); 
+
+        const touchMoveHandler = (te) => {
+            doResize(te.touches[0].clientX);
+        };
+
         const touchEndHandler = () => {
             document.removeEventListener('touchmove', touchMoveHandler);
             document.removeEventListener('touchend', touchEndHandler);
         };
-        document.addEventListener('touchmove', touchMoveHandler);
+
+        document.addEventListener('touchmove', touchMoveHandler, { passive: false });
         document.addEventListener('touchend', touchEndHandler);
-    });
+    }, { passive: false });
 }
 
 // ─────────────────────────────────────────────
