@@ -8,10 +8,25 @@ let rootEntries = [];
 const expandedPaths = new Set();
 let currentPreviewUrl = null;
 
-// Regex for media types
+// Media Type Definitions
 const EXT_IMG = /\.(jpe?g|png|gif|webp|bmp|svg|avif)$/i;
 const EXT_VID = /\.(mp4|webm|ogv|mov|m4v|mkv|avi)$/i;
 const EXT_AUD = /\.(mp3|wav|flac|aac|ogg|m4a)$/i;
+
+let isMuted = true; // Defaulting to true for better mobile autoplay compatibility
+const muteBtn = document.getElementById("btn-mute");
+
+muteBtn.onclick = () => {
+    isMuted = !isMuted;
+    muteBtn.classList.toggle("is-muted", isMuted);
+    muteBtn.textContent = isMuted ? "🔇" : "🔊";
+
+    // If a video/audio is currently playing, update it live!
+    const mediaEl = preview.querySelector("video, audio");
+    if (mediaEl) {
+        mediaEl.muted = isMuted;
+    }
+};
 
 function isMedia(name) { 
     return EXT_IMG.test(name) || EXT_VID.test(name) || EXT_AUD.test(name); 
@@ -35,29 +50,22 @@ function shouldDisplay(name) {
 }
 
 // ─────────────────────────────────────────────
-// PREVIEW LOGIC (Watermark & Toggle)
+// PREVIEW & MEMORY MANAGEMENT
 // ─────────────────────────────────────────────
 
 function clearPreview() {
-    // Remove all media and captions
     const oldMedia = preview.querySelectorAll("video, img, audio, .status-msg, .error-div");
     oldMedia.forEach(el => el.remove());
-
-    // Show the "Preview Here" text again
     const introText = document.getElementById("previewText");
     if (introText) introText.style.display = "block";
 }
 
 function showPreview(blob, name) {
-    if (currentPreviewUrl) {
-        URL.revokeObjectURL(currentPreviewUrl);
-    }
+    if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
 
-    // Toggle Visibility
     const introText = document.getElementById("previewText");
     if (introText) introText.style.display = "none";
 
-    // Clean up previous media only (leaves watermark safe)
     const oldMedia = preview.querySelectorAll("video, img, audio, .status-msg, .error-div");
     oldMedia.forEach(el => el.remove());
 
@@ -69,8 +77,7 @@ function showPreview(blob, name) {
     else if (EXT_IMG.test(fileName)) mimeType = "image/" + fileName.split('.').pop();
     else if (EXT_AUD.test(fileName)) mimeType = "audio/mpeg";
 
-    const finalBlob = blob.slice(0, blob.size, mimeType);
-    currentPreviewUrl = URL.createObjectURL(finalBlob);
+    currentPreviewUrl = URL.createObjectURL(blob.slice(0, blob.size, mimeType));
     
     let el;
     if (EXT_IMG.test(fileName)) {
@@ -79,18 +86,18 @@ function showPreview(blob, name) {
         el = document.createElement("video");
         el.controls = true;
         el.autoplay = true; 
-        el.muted = true; // Essential for Android autoplay
+        el.muted = isMuted; // Use the global state instead of 'true'
         el.style.width = "100%";
     } else if (EXT_AUD.test(fileName)) {
         el = document.createElement("audio");
         el.controls = true;
         el.autoplay = true; 
+        el.muted = isMuted; // Use the global state
     }
 
     if (el) {
         el.src = currentPreviewUrl;
         preview.appendChild(el);
-
         const cap = document.createElement("div");
         cap.className = "status-msg";
         cap.textContent = name.split("/").pop();
@@ -99,56 +106,49 @@ function showPreview(blob, name) {
 }
 
 // ─────────────────────────────────────────────
-// ARCHIVE LOGIC (ZIP/APK)
+// LARGE FILE ARCHIVE LOGIC (zip.js)
 // ─────────────────────────────────────────────
 
-async function loadZipArchive(buf, name, type) {
-    const zip = await JSZip.loadAsync(buf);
-    rootEntries.push({ 
-        _type: "archive", 
-        archiveType: type, 
-        name: name,
-        fullPath: name, 
-        zipObject: zip,
-        allPaths: Object.keys(zip.files).filter(p => !zip.files[p].dir)
-    });
-    reloadTree();
+async function loadZipArchive(file, name, type) {
+    // BlobReader allows random access without loading the 2GB+ file into RAM
+    const reader = new zip.ZipReader(new zip.BlobReader(file));
+    
+    try {
+        const entries = await reader.getEntries();
+        const allPaths = entries.filter(e => !e.directory).map(e => e.filename);
+
+        rootEntries.push({ 
+            _type: "archive", 
+            archiveType: type, 
+            name: name,
+            fullPath: name, 
+            zipReader: reader, 
+            entries: entries,
+            allPaths: allPaths
+        });
+        reloadTree();
+    } catch (err) {
+        console.error("Archive Error:", err);
+        alert("Failed to read " + type + ". Ensure it is a valid zip/apk.");
+    }
 }
 
 function renderArchiveNodeHierarchical(archive, parentEl) {
-    const searchTerm = searchBar.value.toLowerCase();
     const virtualTree = { folders: new Map(), files: [] };
-
     for (const path of archive.allPaths) {
         const parts = path.split('/');
-        let currentFolder = virtualTree;
+        let cur = virtualTree;
         for (let i = 0; i < parts.length - 1; i++) {
-            const folderName = parts[i];
-            if (!currentFolder.folders.has(folderName)) {
-                currentFolder.folders.set(folderName, { folders: new Map(), files: [] });
-            }
-            currentFolder = currentFolder.folders.get(folderName);
+            if (!cur.folders.has(parts[i])) cur.folders.set(parts[i], { folders: new Map(), files: [] });
+            cur = cur.folders.get(parts[i]);
         }
-        currentFolder.files.push(path);
+        cur.files.push(path);
     }
-
-    const getVisibleSubPaths = (vFolder) => {
-        let visible = vFolder.files.filter(f => shouldDisplay(f.split('/').pop()));
-        for (const sub of vFolder.folders.values()) visible = visible.concat(getVisibleSubPaths(sub));
-        return visible;
-    };
-
-    if (getVisibleSubPaths(virtualTree).length === 0 && !archive.name.toLowerCase().includes(searchTerm)) return;
 
     const container = document.createElement("div");
     const header = document.createElement("div");
     header.className = "folder";
-    header.innerHTML = `
-        <span class="arrow">▶</span>
-        <span class="badge badge-zip">${archive.archiveType}</span>
-        <span> ${archive.name}</span>
-        <span class="remove-btn">✕</span>
-    `;
+    header.innerHTML = `<span class="arrow">▶</span><span class="badge badge-zip">${archive.archiveType}</span><span> ${archive.name}</span><span class="remove-btn">✕</span>`;
     
     const content = document.createElement("div");
     const isExpanded = expandedPaths.has(archive.fullPath);
@@ -165,17 +165,16 @@ function renderArchiveNodeHierarchical(archive, parentEl) {
         isOpen ? expandedPaths.delete(archive.fullPath) : expandedPaths.add(archive.fullPath);
         if (!isOpen) {
             content.innerHTML = "";
-            renderVirtualFolder(virtualTree, content, 1, archive.fullPath, archive.zipObject);
+            renderVirtualFolder(virtualTree, content, 1, archive);
         }
     };
 
-    if (isExpanded) renderVirtualFolder(virtualTree, content, 1, archive.fullPath, archive.zipObject);
+    if (isExpanded) renderVirtualFolder(virtualTree, content, 1, archive);
     container.append(header, content);
     parentEl.appendChild(container);
 }
 
-// Helper for virtual archive folders
-function renderVirtualFolder(vFolder, containerEl, level, pathPrefix, zip) {
+function renderVirtualFolder(vFolder, containerEl, level, archive) {
     vFolder.folders.forEach((subV, name) => {
         const fHeader = document.createElement("div");
         fHeader.className = "folder";
@@ -189,7 +188,7 @@ function renderVirtualFolder(vFolder, containerEl, level, pathPrefix, zip) {
             fHeader.querySelector(".arrow").style.transform = isOpen ? "rotate(0deg)" : "rotate(90deg)";
             if (!isOpen) {
                 fContent.innerHTML = "";
-                renderVirtualFolder(subV, fContent, level + 1, pathPrefix + "/" + name, zip);
+                renderVirtualFolder(subV, fContent, level + 1, archive);
             }
         };
         containerEl.append(fHeader, fContent);
@@ -200,13 +199,16 @@ function renderVirtualFolder(vFolder, containerEl, level, pathPrefix, zip) {
         item.className = "file";
         item.style.paddingLeft = (level * 12 + 14) + "px";
         item.innerHTML = `<span>${getIcon(path)}</span><span>${path.split('/').pop()}</span>`;
-        item.onclick = async () => showPreview(await zip.file(path).async("blob"), path);
+        item.onclick = async () => {
+            const entry = archive.entries.find(e => e.filename === path);
+            if (entry) showPreview(await entry.getData(new zip.BlobWriter()), path);
+        };
         containerEl.appendChild(item);
     });
 }
 
 // ─────────────────────────────────────────────
-// NATIVE FOLDER / FILE LOGIC
+// NATIVE FILE SYSTEM & DROPS
 // ─────────────────────────────────────────────
 
 async function renderEntry(entry, parentEl, level) {
@@ -241,9 +243,7 @@ async function renderEntry(entry, parentEl, level) {
                 for (const item of filteredItems) await renderEntry(item, content, level + 1);
             }
         };
-        if (isExpanded) {
-            for (const item of filteredItems) await renderEntry(item, content, level + 1);
-        }
+        if (isExpanded) for (const item of filteredItems) await renderEntry(item, content, level + 1);
         container.append(header, content);
         parentEl.appendChild(container);
     } else if (shouldDisplay(entry.name)) {
@@ -263,20 +263,13 @@ async function renderEntry(entry, parentEl, level) {
     }
 }
 
-// ─────────────────────────────────────────────
-// INPUT & SYSTEM HANDLERS
-// ─────────────────────────────────────────────
-
 async function handleFileSelect(e) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     for (const file of files) {
         const ext = file.name.split('.').pop().toLowerCase();
-        if (ext === "zip" || ext === "apk") {
-            await loadZipArchive(await file.arrayBuffer(), file.name, ext.toUpperCase());
-        } else if (isMedia(file.name)) {
-            rootEntries.push({ isFile: true, name: file.name, _file: file, fullPath: file.name, file: (cb) => cb(file) });
-        }
+        if (ext === "zip" || ext === "apk") await loadZipArchive(file, file.name, ext.toUpperCase());
+        else if (isMedia(file.name)) rootEntries.push({ isFile: true, name: file.name, _file: file, fullPath: file.name, file: (cb) => cb(file) });
     }
     reloadTree();
     e.target.value = "";
@@ -291,7 +284,7 @@ async function handleDrop(e) {
         else {
             const file = item.getAsFile();
             const ext = file.name.split('.').pop().toLowerCase();
-            if (ext === "zip" || ext === "apk") await loadZipArchive(await file.arrayBuffer(), file.name, ext.toUpperCase());
+            if (ext === "zip" || ext === "apk") await loadZipArchive(file, file.name, ext.toUpperCase());
             else if (isMedia(file.name)) rootEntries.push({ isFile: true, name: file.name, _file: file, fullPath: file.name, file: (cb) => cb(file) });
         }
     }
@@ -310,6 +303,10 @@ async function reloadTree() {
     }
 }
 
+// ─────────────────────────────────────────────
+// TOUCH RESIZER & INITIALIZATION
+// ─────────────────────────────────────────────
+
 function initResizer() {
     const doResize = (clientX) => {
         if (clientX > 50 && clientX < window.innerWidth * 0.9) {
@@ -317,35 +314,23 @@ function initResizer() {
         }
     };
 
-    // Mouse Events
     resizer.onmousedown = () => {
         document.onmousemove = e => doResize(e.clientX);
         document.onmouseup = () => document.onmousemove = null;
     };
 
-    // Touch Events for Android
+    // Blocks refresh gesture ONLY when finger is on the resizer bar
     resizer.addEventListener('touchstart', (e) => {
-        // We only preventDefault here to stop the "bounce" 
-        // while the finger is actually on the resizer bar.
         e.preventDefault(); 
-
-        const touchMoveHandler = (te) => {
-            doResize(te.touches[0].clientX);
-        };
-
+        const touchMoveHandler = (te) => doResize(te.touches[0].clientX);
         const touchEndHandler = () => {
             document.removeEventListener('touchmove', touchMoveHandler);
             document.removeEventListener('touchend', touchEndHandler);
         };
-
         document.addEventListener('touchmove', touchMoveHandler, { passive: false });
         document.addEventListener('touchend', touchEndHandler);
     }, { passive: false });
 }
-
-// ─────────────────────────────────────────────
-// INITIALIZATION
-// ─────────────────────────────────────────────
 
 document.getElementById('file-input').addEventListener('change', handleFileSelect);
 searchBar.oninput = reloadTree;
