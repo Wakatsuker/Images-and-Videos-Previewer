@@ -144,6 +144,10 @@ body {
     box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
 }
 
+#previewText {
+    font-size: 25px;
+}
+
 .toolbar {
     padding: 10px;
     border-bottom: 1px solid #333;
