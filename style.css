@@ -78,6 +78,15 @@ body {
     flex-shrink: 0; 
 }
 
+.folder .remove-btn, .file .remove-btn {
+    display: inline-block !important; /* Force visibility */
+    opacity: 1 !important;
+    margin-left: auto;
+    padding: 5px 10px;
+    color: #ff5555;
+    cursor: pointer;
+}
+
 .remove-btn { margin-left: auto; color: #666; padding: 0 5px; flex-shrink: 0; font-weight: bold; }
 .remove-btn:hover { color: #ff4444; }
 
@@ -92,8 +101,18 @@ body {
 .badge-zip { background: #4a3a00; color: #ffd966; }
 .badge-batch { background: #222; color: #007bff; border: 1px solid #007bff; }
 
-#resizer { width: 4px; cursor: ew-resize; background: #333; z-index: 10; }
-#resizer:hover { background: #007bff; }
+#resizer {
+    width: 10px; /* Thicker grab area */
+    background: #333;
+    cursor: col-resize;
+    touch-action: none; /* Prevents the browser from scrolling while resizing */
+}
+#resizer:hover { 
+    background: #007bff; 
+}
+#resizer:active {
+    background: #007bff; /* Glow blue when touching */
+}
 
 #preview { 
     flex: 1; 
