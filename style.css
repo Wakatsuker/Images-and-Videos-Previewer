@@ -170,5 +170,27 @@ body {
     transform: translateY(1px);
 }
 
+.btn-mute {
+    padding: 10px;
+    background: #444;
+    color: white;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    transition: all 0.2s;
+    min-width: 50px;
+}
+
+/* When muted, make it look active/reddish */
+.btn-mute.is-muted {
+    background: #833;
+    border-color: #a55;
+}
+
+.btn-mute:active {
+    transform: scale(0.95);
+}
+
 .empty-msg { color: #555; font-style: italic; text-align: center; padding: 20px; width: 100%; box-sizing: border-box; }
 .status-msg { color: #888; font-size: 13px; }
