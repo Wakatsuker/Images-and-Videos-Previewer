@@ -188,8 +188,66 @@ body {
     border-color: #a55;
 }
 
+/* Container for the media and the overlaid buttons */
+.media-container {
+    position: relative;
+    width: 100%;
+    max-height: 80vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #000; /* Black bars for videos that don't fit perfectly */
+}
+
+/* Hover buttons */
+.hover-nav {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 15%; /* Sensitive area on the sides */
+    background: rgba(0, 0, 0, 0); /* Invisible until hover */
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.3s, background 0.3s;
+    z-index: 10;
+    border: none;
+    outline: none;
+    font-family: serif; /* Makes the ‹ and › symbols look more elegant */
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.hover-nav:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.3); /* Subtle dark tint on hover */
+}
+
+.hover-prev { left: 0; }
+.hover-next { right: 0; }
+
+/* Hide buttons when disabled (first or last file) */
+.hover-nav:disabled {
+    display: none;
+}
+
 .btn-mute:active {
     transform: scale(0.95);
+}
+
+.file.selected {
+    background-color: #264f78 !important; /* Subtle blue background */
+    color: #fff;
+    border-left: 3px solid #007bff; /* Adds a nice "active" tab look */
+}
+
+.hover-nav:active {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1); /* Brief highlight when tapped on Android */
 }
 
 .empty-msg { color: #555; font-style: italic; text-align: center; padding: 20px; width: 100%; box-sizing: border-box; }
