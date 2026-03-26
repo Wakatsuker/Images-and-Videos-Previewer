@@ -5,9 +5,10 @@ const searchBar = document.getElementById("search-bar");
 const sidebar = document.getElementById("sidebar");
 
 let rootEntries = [];
-const expandedPaths = new Set(); 
+const expandedPaths = new Set();
+let currentPreviewUrl = null;
 
-// Updated regex to include .ogv
+// Regex for media types
 const EXT_IMG = /\.(jpe?g|png|gif|webp|bmp|svg|avif)$/i;
 const EXT_VID = /\.(mp4|webm|ogv|mov|m4v|mkv|avi)$/i;
 const EXT_AUD = /\.(mp3|wav|flac|aac|ogg|m4a)$/i;
@@ -33,30 +34,30 @@ function shouldDisplay(name) {
     return matchesSearch && matchesFilter;
 }
 
+// ─────────────────────────────────────────────
+// PREVIEW LOGIC (Watermark & Toggle)
+// ─────────────────────────────────────────────
+
 function clearPreview() {
-    preview.innerHTML = "Preview Here";
+    // Remove all media and captions
+    const oldMedia = preview.querySelectorAll("video, img, audio, .status-msg, .error-div");
+    oldMedia.forEach(el => el.remove());
+
+    // Show the "Preview Here" text again
+    const introText = document.getElementById("previewText");
+    if (introText) introText.style.display = "block";
 }
 
-// Add this at the very top of your script.js to manage memory
-
-let currentPreviewUrl = null;
-
 function showPreview(blob, name) {
-    // 1. Memory Cleanup
     if (currentPreviewUrl) {
         URL.revokeObjectURL(currentPreviewUrl);
     }
 
-    // 2. THE TOGGLE LOGIC
+    // Toggle Visibility
     const introText = document.getElementById("previewText");
-    const watermark = document.getElementById("watermark");
-
-    // Hide the "Preview Here" text (but don't delete it!)
     if (introText) introText.style.display = "none";
 
-    // 3. CLEANUP PREVIOUS MEDIA
-    // We only remove elements we CREATED (videos, images, status-msgs)
-    // This leaves both #previewText and #watermark safe in the HTML
+    // Clean up previous media only (leaves watermark safe)
     const oldMedia = preview.querySelectorAll("video, img, audio, .status-msg, .error-div");
     oldMedia.forEach(el => el.remove());
 
@@ -78,6 +79,7 @@ function showPreview(blob, name) {
         el = document.createElement("video");
         el.controls = true;
         el.autoplay = true; 
+        el.muted = true; // Essential for Android autoplay
         el.style.width = "100%";
     } else if (EXT_AUD.test(fileName)) {
         el = document.createElement("audio");
@@ -96,22 +98,8 @@ function showPreview(blob, name) {
     }
 }
 
-// 4. THE "RESET" LOGIC
-// Use this function when you close a file or clear the list
-function clearPreview() {
-    // Remove all media
-    const oldMedia = preview.querySelectorAll("video, img, audio, .status-msg");
-    oldMedia.forEach(el => el.remove());
-
-    // Show the "Preview Here" text again
-    const introText = document.getElementById("previewText");
-    if (introText) introText.style.display = "block";
-
-    // The watermark is never hidden, so it's already there!
-}
-
 // ─────────────────────────────────────────────
-// ZIP and APK Hierarchical Logic
+// ARCHIVE LOGIC (ZIP/APK)
 // ─────────────────────────────────────────────
 
 async function loadZipArchive(buf, name, type) {
@@ -124,13 +112,13 @@ async function loadZipArchive(buf, name, type) {
         zipObject: zip,
         allPaths: Object.keys(zip.files).filter(p => !zip.files[p].dir)
     });
+    reloadTree();
 }
 
 function renderArchiveNodeHierarchical(archive, parentEl) {
     const searchTerm = searchBar.value.toLowerCase();
-
-    // Build Virtual Tree
     const virtualTree = { folders: new Map(), files: [] };
+
     for (const path of archive.allPaths) {
         const parts = path.split('/');
         let currentFolder = virtualTree;
@@ -144,135 +132,158 @@ function renderArchiveNodeHierarchical(archive, parentEl) {
         currentFolder.files.push(path);
     }
 
-    // Helper to see if folder has visible content
     const getVisibleSubPaths = (vFolder) => {
-        let visible = vFolder.files.filter(f => shouldDisplay(f.split('/').pop()) && f.toLowerCase().includes(searchTerm));
+        let visible = vFolder.files.filter(f => shouldDisplay(f.split('/').pop()));
         for (const sub of vFolder.folders.values()) visible = visible.concat(getVisibleSubPaths(sub));
         return visible;
     };
 
-    const allVisible = getVisibleSubPaths(virtualTree);
-    if (allVisible.length === 0 && !archive.name.toLowerCase().includes(searchTerm)) return;
+    if (getVisibleSubPaths(virtualTree).length === 0 && !archive.name.toLowerCase().includes(searchTerm)) return;
 
-    const archivePathKey = archive.fullPath;
     const container = document.createElement("div");
     const header = document.createElement("div");
     header.className = "folder";
-    header.innerHTML = `<span class="arrow">▶</span><span class="badge badge-zip">${archive.archiveType}</span><span> ${archive.name}</span><span class="remove-btn">✕</span>`;
+    header.innerHTML = `
+        <span class="arrow">▶</span>
+        <span class="badge badge-zip">${archive.archiveType}</span>
+        <span> ${archive.name}</span>
+        <span class="remove-btn">✕</span>
+    `;
     
     const content = document.createElement("div");
-    const isExpanded = expandedPaths.has(archivePathKey);
+    const isExpanded = expandedPaths.has(archive.fullPath);
     content.style.display = isExpanded ? "block" : "none";
-    if (isExpanded) header.querySelector(".arrow").style.transform = "rotate(90deg)";
 
-    const renderVirtualFolder = async (vFolder, containerEl, level, pathPrefix) => {
-        // Render Folders
-        for (const [name, subV] of vFolder.folders.entries()) {
-            if (getVisibleSubPaths(subV).length === 0) continue;
-            const subKey = `${pathPrefix}/${name}`;
-            const fContainer = document.createElement("div");
-            const fHeader = document.createElement("div");
-            fHeader.className = "folder";
-            fHeader.style.paddingLeft = (level * 12) + "px";
-            fHeader.innerHTML = `<span class="arrow">▶</span><span>📁 ${name}</span>`;
-            const fContent = document.createElement("div");
-            const isSubOpen = expandedPaths.has(subKey);
-            fContent.style.display = isSubOpen ? "block" : "none";
-            if (isSubOpen) fHeader.querySelector(".arrow").style.transform = "rotate(90deg)";
-
-            fHeader.onclick = () => {
-                if (fContent.style.display === "none") {
-                    fContent.innerHTML = "";
-                    renderVirtualFolder(subV, fContent, level + 1, subKey);
-                    fContent.style.display = "block";
-                    fHeader.querySelector(".arrow").style.transform = "rotate(90deg)";
-                    expandedPaths.add(subKey);
-                } else {
-                    fContent.style.display = "none";
-                    fHeader.querySelector(".arrow").style.transform = "rotate(0deg)";
-                    expandedPaths.delete(subKey);
-                }
-            };
-            if (isSubOpen) renderVirtualFolder(subV, fContent, level + 1, subKey);
-            fContainer.append(fHeader, fContent);
-            containerEl.appendChild(fContainer);
+    header.onclick = (e) => {
+        if (e.target.classList.contains("remove-btn")) {
+            rootEntries = rootEntries.filter(a => a !== archive);
+            clearPreview(); reloadTree(); return;
         }
-
-        // Render Files with Batching
-        const visibleFiles = vFolder.files.filter(f => shouldDisplay(f.split('/').pop()) && f.toLowerCase().includes(searchTerm));
-        let i = 0;
-        while (i < visibleFiles.length) {
-            const chunk = visibleFiles.slice(i, i + 100);
-            if (visibleFiles.length > 100 && chunk.length === 100) {
-                renderVirtualBatch(chunk, containerEl, level, (i/100)+1, pathPrefix, archive.zipObject);
-            } else {
-                chunk.forEach(p => renderArchiveFile(p, containerEl, level, archive.zipObject));
-            }
-            i += 100;
+        const isOpen = content.style.display === "block";
+        content.style.display = isOpen ? "none" : "block";
+        header.querySelector(".arrow").style.transform = isOpen ? "rotate(0deg)" : "rotate(90deg)";
+        isOpen ? expandedPaths.delete(archive.fullPath) : expandedPaths.add(archive.fullPath);
+        if (!isOpen) {
+            content.innerHTML = "";
+            renderVirtualFolder(virtualTree, content, 1, archive.fullPath, archive.zipObject);
         }
     };
 
-    const renderArchiveFile = (path, el, level, zip) => {
+    if (isExpanded) renderVirtualFolder(virtualTree, content, 1, archive.fullPath, archive.zipObject);
+    container.append(header, content);
+    parentEl.appendChild(container);
+}
+
+// Helper for virtual archive folders
+function renderVirtualFolder(vFolder, containerEl, level, pathPrefix, zip) {
+    vFolder.folders.forEach((subV, name) => {
+        const fHeader = document.createElement("div");
+        fHeader.className = "folder";
+        fHeader.style.paddingLeft = (level * 12) + "px";
+        fHeader.innerHTML = `<span class="arrow">▶</span><span>📁 ${name}</span>`;
+        const fContent = document.createElement("div");
+        fContent.style.display = "none";
+        fHeader.onclick = () => {
+            const isOpen = fContent.style.display === "block";
+            fContent.style.display = isOpen ? "none" : "block";
+            fHeader.querySelector(".arrow").style.transform = isOpen ? "rotate(0deg)" : "rotate(90deg)";
+            if (!isOpen) {
+                fContent.innerHTML = "";
+                renderVirtualFolder(subV, fContent, level + 1, pathPrefix + "/" + name, zip);
+            }
+        };
+        containerEl.append(fHeader, fContent);
+    });
+
+    vFolder.files.filter(f => shouldDisplay(f.split('/').pop())).forEach(path => {
         const item = document.createElement("div");
         item.className = "file";
         item.style.paddingLeft = (level * 12 + 14) + "px";
         item.innerHTML = `<span>${getIcon(path)}</span><span>${path.split('/').pop()}</span>`;
         item.onclick = async () => showPreview(await zip.file(path).async("blob"), path);
-        el.appendChild(item);
-    };
-
-    const renderVirtualBatch = (items, el, level, num, prefix, zip) => {
-        const key = `${prefix}_batch_${num}`;
-        const bCont = document.createElement("div");
-        const bHead = document.createElement("div");
-        bHead.className = "folder"; bHead.style.paddingLeft = (level * 12) + "px";
-        bHead.innerHTML = `<span class="arrow">▶</span><span class="badge badge-batch">${num}</span><span> Block</span>`;
-        const bBody = document.createElement("div");
-        const isOpen = expandedPaths.has(key);
-        bBody.style.display = isOpen ? "block" : "none";
-        bHead.onclick = () => {
-            if (bBody.style.display === "none") {
-                bBody.innerHTML = "";
-                items.forEach(p => renderArchiveFile(p, bBody, level + 1, zip));
-                bBody.style.display = "block";
-                expandedPaths.add(key);
-            } else { bBody.style.display = "none"; expandedPaths.delete(key); }
-        };
-        if (isOpen) items.forEach(p => renderArchiveFile(p, bBody, level + 1, zip));
-        bCont.append(bHead, bBody); el.appendChild(bCont);
-    };
-
-    header.onclick = (e) => {
-        if (e.target.classList.contains("remove-btn")) {
-            rootEntries = rootEntries.filter(a => a !== archive);
-            expandedPaths.delete(archivePathKey);
-            clearPreview(); reloadTree(); return;
-        }
-        if (content.style.display === "none") {
-            content.innerHTML = "";
-            renderVirtualFolder(virtualTree, content, 0, archivePathKey);
-            content.style.display = "block";
-            header.querySelector(".arrow").style.transform = "rotate(90deg)";
-            expandedPaths.add(archivePathKey);
-        } else {
-            content.style.display = "none";
-            header.querySelector(".arrow").style.transform = "rotate(0deg)";
-            expandedPaths.delete(archivePathKey);
-        }
-    };
-
-    if (isExpanded) renderVirtualFolder(virtualTree, content, 0, archivePathKey);
-    container.append(header, content);
-    parentEl.appendChild(container);
+        containerEl.appendChild(item);
+    });
 }
 
 // ─────────────────────────────────────────────
-// Native Folder and App Logic
+// NATIVE FOLDER / FILE LOGIC
 // ─────────────────────────────────────────────
+
+async function renderEntry(entry, parentEl, level) {
+    const pathKey = entry.fullPath || entry.name;
+    if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const allRaw = await new Promise(res => reader.readEntries(res));
+        const filteredItems = allRaw.filter(item => item.isDirectory || shouldDisplay(item.name));
+        if (filteredItems.length === 0) return;
+
+        const container = document.createElement("div");
+        const header = document.createElement("div");
+        header.className = "folder";
+        header.style.paddingLeft = (level * 12) + "px";
+        header.innerHTML = `<span class="arrow">▶</span><span>📁 ${entry.name}</span><span class="remove-btn">✕</span>`;
+        
+        const content = document.createElement("div");
+        const isExpanded = expandedPaths.has(pathKey);
+        content.style.display = isExpanded ? "block" : "none";
+
+        header.onclick = async (ev) => {
+            if (ev.target.classList.contains("remove-btn")) {
+                rootEntries = rootEntries.filter(en => en !== entry);
+                clearPreview(); reloadTree(); return;
+            }
+            const isOpen = content.style.display === "block";
+            content.style.display = isOpen ? "none" : "block";
+            header.querySelector(".arrow").style.transform = isOpen ? "rotate(0deg)" : "rotate(90deg)";
+            isOpen ? expandedPaths.delete(pathKey) : expandedPaths.add(pathKey);
+            if (!isOpen) {
+                content.innerHTML = "";
+                for (const item of filteredItems) await renderEntry(item, content, level + 1);
+            }
+        };
+        if (isExpanded) {
+            for (const item of filteredItems) await renderEntry(item, content, level + 1);
+        }
+        container.append(header, content);
+        parentEl.appendChild(container);
+    } else if (shouldDisplay(entry.name)) {
+        const f = entry._file || await new Promise(r => entry.file(r));
+        const el = document.createElement("div");
+        el.className = "file";
+        el.style.paddingLeft = (level * 12 + 14) + "px";
+        el.innerHTML = `<span>${getIcon(f.name)}</span><span>${f.name}</span><span class="remove-btn">✕</span>`;
+        el.onclick = (ev) => {
+            if (ev.target.classList.contains("remove-btn")) {
+                rootEntries = rootEntries.filter(en => en !== entry);
+                clearPreview(); reloadTree(); return;
+            }
+            showPreview(f, f.name);
+        };
+        parentEl.appendChild(el);
+    }
+}
+
+// ─────────────────────────────────────────────
+// INPUT & SYSTEM HANDLERS
+// ─────────────────────────────────────────────
+
+async function handleFileSelect(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    for (const file of files) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext === "zip" || ext === "apk") {
+            await loadZipArchive(await file.arrayBuffer(), file.name, ext.toUpperCase());
+        } else if (isMedia(file.name)) {
+            rootEntries.push({ isFile: true, name: file.name, _file: file, fullPath: file.name, file: (cb) => cb(file) });
+        }
+    }
+    reloadTree();
+    e.target.value = "";
+}
 
 async function handleDrop(e) {
     e.preventDefault();
-    sidebar.classList.remove("drag-over");
     for (const item of e.dataTransfer.items) {
         const entry = item.webkitGetAsEntry();
         if (!entry) continue;
@@ -290,7 +301,7 @@ async function handleDrop(e) {
 async function reloadTree() {
     tree.innerHTML = "";
     if (rootEntries.length === 0) {
-        tree.innerHTML = '<div class="empty-msg">Drop files or folders here</div>';
+        tree.innerHTML = '<div class="empty-msg">Drop files or use Open File</div>';
         return;
     }
     for (const entry of rootEntries) {
@@ -299,143 +310,41 @@ async function reloadTree() {
     }
 }
 
-// (Existing Native renderEntry and Batch Logic remains the same as previous version)
-async function getAllEntries(reader) {
-    let results = [];
-    let batch = await new Promise(res => reader.readEntries(res));
-    while (batch.length > 0) {
-        results = results.concat(batch);
-        batch = await new Promise(res => reader.readEntries(res));
-    }
-    return results;
-}
-
-async function renderEntry(entry, parentEl, level) {
-    const pathKey = entry.fullPath || entry.name;
-    if (entry.isDirectory) {
-        const allRaw = await getAllEntries(entry.createReader());
-        const filteredItems = allRaw.filter(item => item.isDirectory || shouldDisplay(item.name));
-        if (filteredItems.length === 0) return;
-        const container = document.createElement("div");
-        const header = document.createElement("div");
-        header.className = "folder";
-        header.style.paddingLeft = (level * 12) + "px";
-        header.innerHTML = `<span class="arrow">▶</span><span>📁 ${entry.name}</span>${level===0?'<span class="remove-btn">✕</span>':''}`;
-        const content = document.createElement("div");
-        const isExpanded = expandedPaths.has(pathKey);
-        content.style.display = isExpanded ? "block" : "none";
-        if (isExpanded) header.querySelector(".arrow").style.transform = "rotate(90deg)";
-        header.onclick = async (ev) => {
-            if (ev.target.classList.contains("remove-btn")) {
-                rootEntries = rootEntries.filter(en => en !== entry);
-                expandedPaths.delete(pathKey);
-                clearPreview(); reloadTree(); return;
-            }
-            if (content.style.display === "none") {
-                content.innerHTML = "";
-                expandedPaths.add(pathKey);
-                await fillFolderContent(filteredItems, content, level, pathKey);
-                content.style.display = "block";
-                header.querySelector(".arrow").style.transform = "rotate(90deg)";
-            } else {
-                content.style.display = "none";
-                expandedPaths.delete(pathKey);
-                header.querySelector(".arrow").style.transform = "rotate(0deg)";
-            }
-        };
-        if (isExpanded) await fillFolderContent(filteredItems, content, level, pathKey);
-        container.append(header, content);
-        parentEl.appendChild(container);
-    } else if (shouldDisplay(entry.name)) {
-        const f = entry._file || await new Promise(r => entry.file(r));
-        const el = document.createElement("div");
-        el.className = "file"; el.style.paddingLeft = (level * 12 + 14) + "px";
-        el.innerHTML = `<span>${getIcon(f.name)}</span><span>${f.name}</span>${level===0?'<span class="remove-btn">✕</span>':''}`;
-        el.onclick = (ev) => {
-            if (ev.target.classList.contains("remove-btn")) {
-                rootEntries = rootEntries.filter(en => en !== entry);
-                clearPreview(); reloadTree(); return;
-            }
-            showPreview(f, f.name);
-        };
-        parentEl.appendChild(el);
-    }
-}
-
-async function fillFolderContent(items, contentEl, level, pathKey) {
-    contentEl.innerHTML = "";
-    let i = 0;
-    while (i < items.length) {
-        const chunk = items.slice(i, i + 100);
-        if (items.length > 100 && chunk.length === 100) {
-            const bKey = `${pathKey}_batch_${(i/100)+1}`;
-            const bCont = document.createElement("div");
-            const bHead = document.createElement("div");
-            bHead.className = "folder"; bHead.style.paddingLeft = ((level+1) * 12) + "px";
-            bHead.innerHTML = `<span class="arrow">▶</span><span class="badge badge-batch">${(i/100)+1}</span><span> Block</span>`;
-            const bBody = document.createElement("div");
-            const isOpen = expandedPaths.has(bKey);
-            bBody.style.display = isOpen ? "block" : "none";
-            bHead.onclick = async () => {
-                if (bBody.style.display === "none") {
-                    bBody.innerHTML = "";
-                    for (const item of chunk) await renderEntry(item, bBody, level + 2);
-                    bBody.style.display = "block"; expandedPaths.add(bKey);
-                } else { bBody.style.display = "none"; expandedPaths.delete(bKey); }
-            };
-            if (isOpen) { for (const item of chunk) await renderEntry(item, bBody, level + 2); }
-            bCont.append(bHead, bBody); contentEl.appendChild(bCont);
-        } else {
-            for (const item of chunk) await renderEntry(item, contentEl, level + 1);
+function initResizer() {
+    const doResize = (clientX) => {
+        if (clientX > 50 && clientX < window.innerWidth * 0.9) {
+            sidebar.style.width = clientX + "px";
         }
-        i += 100;
-    }
+    };
+
+    resizer.onmousedown = () => {
+        document.onmousemove = e => doResize(e.clientX);
+        document.onmouseup = () => document.onmousemove = null;
+    };
+
+    resizer.addEventListener('touchstart', (e) => {
+        const touchMoveHandler = (te) => doResize(te.touches[0].clientX);
+        const touchEndHandler = () => {
+            document.removeEventListener('touchmove', touchMoveHandler);
+            document.removeEventListener('touchend', touchEndHandler);
+        };
+        document.addEventListener('touchmove', touchMoveHandler);
+        document.addEventListener('touchend', touchEndHandler);
+    });
 }
 
-// Function to handle the "Open File" button selection
-async function handleFileSelect(e) {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+// ─────────────────────────────────────────────
+// INITIALIZATION
+// ─────────────────────────────────────────────
 
-    for (const file of files) {
-        const ext = file.name.split('.').pop().toLowerCase();
-        
-        // 1. Check if it's an Archive (ZIP or APK)
-        if (ext === "zip" || ext === "apk") {
-            try {
-                await loadZipArchive(await file.arrayBuffer(), file.name, ext.toUpperCase());
-            } catch (err) {
-                console.error("Error loading archive:", err);
-            }
-        } 
-        // 2. Otherwise, check if it's a standalone Media File
-        else if (isMedia(file.name)) {
-            rootEntries.push({ 
-                isFile: true, 
-                name: file.name, 
-                _file: file, 
-                fullPath: file.name, 
-                file: (cb) => cb(file) 
-            });
-        }
-    }
-    
-    reloadTree();
-    // Reset input so the user can re-select the same file if they want
-    e.target.value = "";
-}
-
-// Attach the listener to the combined input
 document.getElementById('file-input').addEventListener('change', handleFileSelect);
+searchBar.oninput = reloadTree;
+document.querySelectorAll('input[name="filter"]').forEach(r => r.onchange = reloadTree);
 
 [sidebar, preview].forEach(el => {
     el.addEventListener("dragover", e => e.preventDefault());
     el.addEventListener("drop", handleDrop);
 });
-searchBar.oninput = reloadTree;
-document.querySelectorAll('input[name="filter"]').forEach(r => r.onchange = reloadTree);
-resizer.onmousedown = () => {
-    document.onmousemove = e => sidebar.style.width = e.clientX + "px";
-    document.onmouseup = () => document.onmousemove = null;
-};
+
+initResizer();
 reloadTree();
