@@ -81,12 +81,25 @@ body {
     display: inline-block !important;
     opacity: 1 !important;
     margin-left: auto;
-    padding: 5px 10px;
+    padding: 4px 8px;
     color: #ff5555;
     cursor: pointer;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1;
+    transition: background 0.15s, color 0.15s;
+    /* FIX: Must re-enable pointer-events here since .folder span disables it */
+    pointer-events: auto !important;
 }
 
-.remove-btn:hover { color: #ff4444; }
+.remove-btn:hover {
+    color: #fff;
+    background: rgba(255, 60, 60, 0.35);
+}
+
+.remove-btn:active {
+    background: rgba(255, 60, 60, 0.55);
+}
 
 /* Preview Area */
 #preview { 
@@ -101,8 +114,8 @@ body {
 }
 
 #preview img, #preview video, #preview audio { 
-    max-width: 90%; 
-    max-height: 90%; 
+    max-width: 100%; 
+    max-height: 100%; 
     border-radius: 4px; 
     box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
 }
@@ -113,7 +126,7 @@ body {
     position: absolute;
     opacity: 0.3;
     pointer-events: none;
-    z-index: 2; /* Sits behind buttons but above video */
+    z-index: 2;
 }
 
 /* --- Media Navigation (The Arrows) --- */
@@ -128,23 +141,23 @@ body {
 }
 
 video {
-    z-index: 1; /* Lowest layer in container */
+    z-index: 1;
 }
 
 .hover-nav {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 15%; /* Large hit area for Android thumbs */
+    width: 15%;
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 3rem;
     cursor: pointer;
-    opacity: 0; /* Hidden by default on PC */
+    opacity: 0;
     transition: opacity 0.3s, background 0.3s;
-    z-index: 20; /* High z-index to stay above video controls */
+    z-index: 20;
     border: none;
     outline: none;
     font-family: serif;
@@ -173,11 +186,10 @@ video {
 /* Mobile/Android Touch behavior */
 @media (hover: none) {
     .hover-nav {
-        opacity: 0.4; /* Keep arrows slightly visible on mobile so users know they exist */
+        opacity: 0.4;
     }
 }
 
-/* Visual feedback when tapped */
 .hover-nav:active {
     opacity: 1;
     background: rgba(255, 255, 255, 0.1);
@@ -189,3 +201,135 @@ video {
 
 /* Utility */
 .status-msg { color: #888; font-size: 13px; margin-top: 5px; }
+
+.empty-msg { 
+    color: #888; 
+    font-style: italic; 
+    text-align: center; 
+    padding: 40px 20px; 
+    width: 100%; 
+    box-sizing: border-box; 
+    font-size: 18px;
+}
+
+#previewText {
+    color: #666;
+    font-style: italic;
+    font-size: 24px;
+    text-align: center;
+    user-select: none;
+    pointer-events: none;
+}
+
+#header-controls { 
+    padding: 15px; 
+    border-bottom: 1px solid #333; 
+    display: flex; 
+    flex-direction: column; 
+    gap: 12px; 
+}
+
+/* Open File Button Styling */
+.btn-open {
+    width: 100%;
+    padding: 10px;
+    background: #333;
+    color: #ddd;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.btn-open:hover {
+    background: #444;
+    border-color: #007bff;
+    color: #fff;
+}
+
+/* Speaker / Mute Button Styling */
+.btn-mute {
+    padding: 8px 12px;
+    background: #2a2a2a;
+    color: #eee;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 45px;
+}
+
+.btn-mute:hover {
+    background: #3a3a3a;
+    border-color: #666;
+}
+
+.btn-open:active, .btn-mute:active {
+    transform: scale(0.96);
+    background: #222;
+}
+
+.badge-batch { 
+    background: #1a3a5a; 
+    color: #3399ff; 
+    border: 1px solid #3399ff;
+    margin-right: 5px;
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.badge {
+    font-size: 10px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-right: 6px;
+    font-weight: bold;
+    text-transform: uppercase;
+    display: inline-block;
+}
+
+.badge-zip {
+    background: #4a3500;
+    color: #ffcc00;
+    border: 1px solid #ffcc00;
+}
+
+.badge-batch { 
+    background: #1a3a5a; 
+    color: #3399ff; 
+    border: 1px solid #3399ff;
+    font-size: 9px;
+}
+
+.folder .arrow {
+    display: inline-block;
+    transition: transform 0.2s;
+}
+
+/* FIX: pointer-events: none was blocking ALL spans including .remove-btn */
+/* Only disable pointer events on non-interactive label spans */
+.folder > span:not(.remove-btn):not(.arrow):not(.badge):not(.badge-zip):not(.badge-batch) {
+    pointer-events: none;
+}
+
+/* FIX: Resizer — was completely invisible/unclickable due to missing dimensions */
+#resizer {
+    width: 6px;
+    background: #333;
+    cursor: col-resize;
+    flex-shrink: 0;
+    transition: background 0.2s;
+}
+
+#resizer:hover, #resizer:active {
+    background: #007bff;
+}
