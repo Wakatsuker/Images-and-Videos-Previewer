@@ -66,19 +66,18 @@ function clearPreview() {
 // FIXED: Added 'fileElement' to parameters
 function showPreview(blob, name, fileElement = null) {
     if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
-
     const introText = document.getElementById("previewText");
     if (introText) introText.style.display = "none";
 
-    // Clear old content
     preview.innerHTML = "";
 
-    // Manage Selection Highlighting
+    // Fix 1: Selection & Index Sync
     document.querySelectorAll('.file.selected').forEach(el => el.classList.remove('selected'));
     if (fileElement) {
         fileElement.classList.add('selected');
+        // RE-FETCH the list every time to handle filtered views correctly
+        currentFileList = Array.from(document.querySelectorAll('.file'));
         currentIndex = currentFileList.indexOf(fileElement);
-        // We don't need updateNavButtons() anymore if you remove the bottom buttons
     }
 
     const fileName = name.toLowerCase();
@@ -91,7 +90,6 @@ function showPreview(blob, name, fileElement = null) {
 
     currentPreviewUrl = URL.createObjectURL(blob.slice(0, blob.size, mimeType));
     
-    // Create Wrapper
     const container = document.createElement("div");
     container.className = "media-container";
 
@@ -101,7 +99,8 @@ function showPreview(blob, name, fileElement = null) {
     } else if (EXT_VID.test(fileName)) {
         mediaEl = document.createElement("video");
         mediaEl.controls = true;
-        mediaEl.autoplay = true; 
+        mediaEl.autoplay = true;
+        mediaEl.loop = true; 
         mediaEl.muted = isMuted; 
         mediaEl.style.width = "100%";
     } else if (EXT_AUD.test(fileName)) {
@@ -114,20 +113,33 @@ function showPreview(blob, name, fileElement = null) {
     if (mediaEl) {
         mediaEl.src = currentPreviewUrl;
         
-        // Create Hover Buttons
-        const prevBtn = document.createElement("button");
-        prevBtn.className = "hover-nav hover-prev";
-        prevBtn.innerHTML = "‹";
-        prevBtn.disabled = currentIndex <= 0;
-        prevBtn.onclick = (e) => { e.stopPropagation(); currentFileList[currentIndex - 1].click(); };
+        // Fix 2: Android Optimized Buttons
+        const createNavBtn = (isNext) => {
+            const btn = document.createElement("button");
+            btn.className = `hover-nav ${isNext ? 'hover-next' : 'hover-prev'}`;
+            btn.innerHTML = isNext ? "›" : "‹";
+            
+            // Boundary Check
+            const targetIdx = isNext ? currentIndex + 1 : currentIndex - 1;
+            if (targetIdx < 0 || targetIdx >= currentFileList.length) {
+                btn.style.display = "none";
+                return btn;
+            }
 
-        const nextBtn = document.createElement("button");
-        nextBtn.className = "hover-nav hover-next";
-        nextBtn.innerHTML = "›";
-        nextBtn.disabled = currentIndex >= currentFileList.length - 1;
-        nextBtn.onclick = (e) => { e.stopPropagation(); currentFileList[currentIndex + 1].click(); };
+            // 'onpointerdown' is instant on Android
+            btn.onpointerdown = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const targetEl = currentFileList[targetIdx];
+                if (targetEl) {
+                    targetEl.click();
+                    targetEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            };
+            return btn;
+        };
 
-        container.append(prevBtn, mediaEl, nextBtn);
+        container.append(createNavBtn(false), mediaEl, createNavBtn(true));
         preview.appendChild(container);
 
         const cap = document.createElement("div");
@@ -204,12 +216,17 @@ function renderArchiveNodeHierarchical(archive, parentEl) {
 
 function renderVirtualFolder(vFolder, containerEl, level, archive) {
     vFolder.folders.forEach((subV, name) => {
+        // Fix 3: Don't render if folder is empty after filter
+        if (!hasVisibleVirtualContent(subV)) return;
+
         const fHeader = document.createElement("div");
         fHeader.className = "folder";
         fHeader.style.paddingLeft = (level * 12) + "px";
         fHeader.innerHTML = `<span class="arrow">▶</span><span>📁 ${name}</span>`;
+        
         const fContent = document.createElement("div");
         fContent.style.display = "none";
+        
         fHeader.onclick = () => {
             const isOpen = fContent.style.display === "block";
             fContent.style.display = isOpen ? "none" : "block";
@@ -222,11 +239,13 @@ function renderVirtualFolder(vFolder, containerEl, level, archive) {
         containerEl.append(fHeader, fContent);
     });
 
+    // Files section stays the same...
     vFolder.files.filter(f => shouldDisplay(f.split('/').pop())).forEach(path => {
         const item = document.createElement("div");
         item.className = "file";
         item.style.paddingLeft = (level * 12 + 14) + "px";
         item.innerHTML = `<span>${getIcon(path)}</span><span>${path.split('/').pop()}</span>`;
+        
         item.onclick = async () => {
             const entry = archive.entries.find(e => e.filename === path);
             if (entry) {
@@ -238,13 +257,31 @@ function renderVirtualFolder(vFolder, containerEl, level, archive) {
     });
 }
 
+function hasVisibleVirtualContent(vFolder) {
+    // Check if any files in this specific folder match the filter
+    const hasMatchingFile = vFolder.files.some(f => shouldDisplay(f.split('/').pop()));
+    if (hasMatchingFile) return true;
+
+    // Check if any sub-folders inside this folder have matching content
+    for (const subV of vFolder.folders.values()) {
+        if (hasVisibleVirtualContent(subV)) return true;
+    }
+
+    return false;
+}
+
 async function renderEntry(entry, parentEl, level) {
     const pathKey = entry.fullPath || entry.name;
+    
     if (entry.isDirectory) {
         const reader = entry.createReader();
         const allRaw = await new Promise(res => reader.readEntries(res));
-        const filteredItems = allRaw.filter(item => item.isDirectory || shouldDisplay(item.name));
-        if (filteredItems.length === 0) return;
+        
+        // --- NEW LOGIC START ---
+        // We need to recursively check if this folder or any subfolder contains a matching file
+        const hasVisibleFiles = await checkVisibility(entry);
+        if (!hasVisibleFiles) return; // If nothing inside matches, don't even create the folder
+        // --- NEW LOGIC END ---
 
         const container = document.createElement("div");
         const header = document.createElement("div");
@@ -263,20 +300,28 @@ async function renderEntry(entry, parentEl, level) {
             }
             const isOpen = content.style.display === "block";
             content.style.display = isOpen ? "none" : "block";
-            header.querySelector(".arrow").style.transform = isOpen ? "rotate(0deg)" : "rotate(90deg)";
+            header.querySelector(".arrow").style.transform = isOpen ? "rotate(90deg)" : "rotate(0deg)";
             isOpen ? expandedPaths.delete(pathKey) : expandedPaths.add(pathKey);
             if (!isOpen) {
                 content.innerHTML = "";
-                for (const item of filteredItems) await renderEntry(item, content, level + 1);
+                // Re-render children when opening
+                for (const item of allRaw) await renderEntry(item, content, level + 1);
             }
         };
-        if (isExpanded) for (const item of filteredItems) await renderEntry(item, content, level + 1);
+
+        if (isExpanded) {
+            header.querySelector(".arrow").style.transform = "rotate(90deg)";
+            for (const item of allRaw) await renderEntry(item, content, level + 1);
+        }
+
         container.append(header, content);
         parentEl.appendChild(container);
+
     } else if (shouldDisplay(entry.name)) {
+        // Standard file rendering...
         const f = entry._file || await new Promise(r => entry.file(r));
         const el = document.createElement("div");
-        el.className = "file";
+        el.className = "file" + (currentIndex === currentFileList.indexOf(el) ? " selected" : "");
         el.style.paddingLeft = (level * 12 + 14) + "px";
         el.innerHTML = `<span>${getIcon(f.name)}</span><span>${f.name}</span><span class="remove-btn">✕</span>`;
         el.onclick = (ev) => {
@@ -284,22 +329,38 @@ async function renderEntry(entry, parentEl, level) {
                 rootEntries = rootEntries.filter(en => en !== entry);
                 clearPreview(); reloadTree(); return;
             }
-            showPreview(f, f.name, el); // Pass 'el' for highlighting
+            showPreview(f, f.name, el);
         };
         parentEl.appendChild(el);
     }
+}
+
+// Add this helper function below renderEntry
+async function checkVisibility(entry) {
+    if (!entry.isDirectory) {
+        return shouldDisplay(entry.name);
+    }
+    const reader = entry.createReader();
+    const entries = await new Promise(res => reader.readEntries(res));
+    for (const subEntry of entries) {
+        if (await checkVisibility(subEntry)) return true;
+    }
+    return false;
 }
 
 // ─────────────────────────────────────────────
 // EVENTS & INIT
 // ─────────────────────────────────────────────
 
+searchBar.addEventListener('input', () => {
+    reloadTree();
+})
+
 async function reloadTree() {
     tree.innerHTML = "";
     if (rootEntries.length === 0) {
         tree.innerHTML = '<div class="empty-msg">Drop files or use Open File</div>';
         currentFileList = [];
-        updateNavButtons();
         return;
     }
     for (const entry of rootEntries) {
@@ -307,13 +368,10 @@ async function reloadTree() {
         else await renderEntry(entry, tree, 0);
     }
 
-    setTimeout(() => {
-        currentFileList = Array.from(tree.querySelectorAll('.file'));
-        // Find if any currently selected file is still in the list
-        const selected = tree.querySelector('.file.selected');
-        currentIndex = selected ? currentFileList.indexOf(selected) : -1;
-        updateNavButtons();
-    }, 100);
+    // Refresh the navigation list after DOM updates
+    requestAnimationFrame(() => {
+        currentFileList = Array.from(document.querySelectorAll('.file'));
+    });
 }
 
 function initResizer() {
