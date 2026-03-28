@@ -8,6 +8,7 @@ body {
     overflow: hidden; 
 }
 
+/* Sidebar & Layout */
 #sidebar { 
     width: 320px; 
     min-width: 250px; 
@@ -44,18 +45,7 @@ body {
 
 #search-bar:focus { border-color: #007bff; }
 
-.filter-group { 
-    display: flex; 
-    gap: 10px; 
-    font-size: 13px; 
-    align-items: center; 
-    justify-content: space-between; 
-}
-
-.filter-group label { cursor: pointer; display: flex; align-items: center; gap: 4px; }
-
-#tree-container { flex: 1; overflow-y: auto; padding: 10px; position: relative; }
-
+/* Tree Elements */
 .folder, .file { 
     cursor: pointer; 
     display: flex; 
@@ -72,6 +62,12 @@ body {
 .folder:hover, .file:hover { background: #333; }
 .file { color: #bbb; font-size: 14px; }
 
+.file.selected {
+    background-color: #264f78 !important;
+    color: #fff;
+    border-left: 3px solid #007bff;
+}
+
 .arrow { 
     width: 14px; 
     font-size: 10px; 
@@ -80,8 +76,9 @@ body {
     flex-shrink: 0; 
 }
 
+/* Remove Buttons */
 .folder .remove-btn, .file .remove-btn {
-    display: inline-block !important; /* Force visibility */
+    display: inline-block !important;
     opacity: 1 !important;
     margin-left: auto;
     padding: 5px 10px;
@@ -89,33 +86,9 @@ body {
     cursor: pointer;
 }
 
-.remove-btn { margin-left: auto; color: #666; padding: 0 5px; flex-shrink: 0; font-weight: bold; }
 .remove-btn:hover { color: #ff4444; }
 
-.badge { 
-    font-size: 9px; 
-    padding: 2px 6px; 
-    border-radius: 3px; 
-    font-weight: 600; 
-    letter-spacing: 0.5px; 
-    flex-shrink: 0; 
-}
-.badge-zip { background: #4a3a00; color: #ffd966; }
-.badge-batch { background: #222; color: #007bff; border: 1px solid #007bff; }
-
-#resizer {
-    width: 10px; /* Thicker grab area */
-    background: #333;
-    cursor: col-resize;
-    touch-action: none; /* Prevents the browser from scrolling while resizing */
-}
-#resizer:hover { 
-    background: #007bff; 
-}
-#resizer:active {
-    background: #007bff; /* Glow blue when touching */
-}
-
+/* Preview Area */
 #preview { 
     flex: 1; 
     display: flex; 
@@ -127,16 +100,6 @@ body {
     gap: 10px; 
 }
 
-#watermark{
-    color: white;
-    position: relative;
-    top: -25px;
-    font-size: 40px;
-    position: absolute;
-    opacity: 0.3; /* Makes it look like a subtle watermark */
-    pointer-events: none; /* So you can click "through" it to pause video */
-}
-
 #preview img, #preview video, #preview audio { 
     max-width: 90%; 
     max-height: 90%; 
@@ -144,55 +107,16 @@ body {
     box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
 }
 
-#previewText {
-    font-size: 25px;
-}
-
-.toolbar {
-    padding: 10px;
-    border-bottom: 1px solid #333;
-}
-
-.btn-open {
-    width: 100%;
-    padding: 10px;
-    background: #444;
+#watermark {
     color: white;
-    border: 1px solid #555;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: background 0.2s, transform 0.1s;
+    font-size: 40px;
+    position: absolute;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 2; /* Sits behind buttons but above video */
 }
 
-.btn-open:hover {
-    background: #555;
-}
-
-.btn-open:active {
-    background: #333;
-    transform: translateY(1px);
-}
-
-.btn-mute {
-    padding: 10px;
-    background: #444;
-    color: white;
-    border: 1px solid #555;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 1.2rem;
-    transition: all 0.2s;
-    min-width: 50px;
-}
-
-/* When muted, make it look active/reddish */
-.btn-mute.is-muted {
-    background: #833;
-    border-color: #a55;
-}
-
-/* Container for the media and the overlaid buttons */
+/* --- Media Navigation (The Arrows) --- */
 .media-container {
     position: relative;
     width: 100%;
@@ -200,59 +124,68 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    background: #000; /* Black bars for videos that don't fit perfectly */
+    background: #000;
 }
 
-/* Hover buttons */
+video {
+    z-index: 1; /* Lowest layer in container */
+}
+
 .hover-nav {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 15%; /* Sensitive area on the sides */
-    background: rgba(0, 0, 0, 0); /* Invisible until hover */
+    width: 15%; /* Large hit area for Android thumbs */
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 2.5rem;
+    font-size: 3rem;
     cursor: pointer;
-    opacity: 0;
+    opacity: 0; /* Hidden by default on PC */
     transition: opacity 0.3s, background 0.3s;
-    z-index: 10;
+    z-index: 20; /* High z-index to stay above video controls */
     border: none;
     outline: none;
-    font-family: serif; /* Makes the ‹ and › symbols look more elegant */
+    font-family: serif;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
 }
 
-.hover-nav:hover {
-    opacity: 1;
-    background: rgba(0, 0, 0, 0.3); /* Subtle dark tint on hover */
+.hover-prev { 
+    left: 0; 
+    background: linear-gradient(to right, rgba(0,0,0,0.3), transparent);
 }
 
-.hover-prev { left: 0; }
-.hover-next { right: 0; }
+.hover-next { 
+    right: 0; 
+    background: linear-gradient(to left, rgba(0,0,0,0.3), transparent);
+}
 
-/* Hide buttons when disabled (first or last file) */
+/* Desktop Hover behavior */
+@media (hover: hover) {
+    .hover-nav:hover {
+        opacity: 1;
+        background: rgba(0, 0, 0, 0.4);
+    }
+}
+
+/* Mobile/Android Touch behavior */
+@media (hover: none) {
+    .hover-nav {
+        opacity: 0.4; /* Keep arrows slightly visible on mobile so users know they exist */
+    }
+}
+
+/* Visual feedback when tapped */
+.hover-nav:active {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1);
+}
+
 .hover-nav:disabled {
     display: none;
 }
 
-.btn-mute:active {
-    transform: scale(0.95);
-}
-
-.file.selected {
-    background-color: #264f78 !important; /* Subtle blue background */
-    color: #fff;
-    border-left: 3px solid #007bff; /* Adds a nice "active" tab look */
-}
-
-.hover-nav:active {
-    opacity: 1;
-    background: rgba(255, 255, 255, 0.1); /* Brief highlight when tapped on Android */
-}
-
-.empty-msg { color: #555; font-style: italic; text-align: center; padding: 20px; width: 100%; box-sizing: border-box; }
-.status-msg { color: #888; font-size: 13px; }
+/* Utility */
+.status-msg { color: #888; font-size: 13px; margin-top: 5px; }
