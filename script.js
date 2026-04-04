@@ -315,8 +315,10 @@ function hasVisibleVirtualContent(vFolder) {
     return false;
 }
 
-// Read all children of a directory entry into a flat array (one-shot cursor)
+// Read all children of a directory entry, caching on the entry object so
+// repeated reloadTree calls (filter then search) never hit a drained cursor.
 async function readAllEntries(dirEntry) {
+    if (dirEntry._cachedChildren) return dirEntry._cachedChildren;
     const results = [];
     const reader = dirEntry.createReader();
     const readBatch = async () => {
@@ -327,10 +329,11 @@ async function readAllEntries(dirEntry) {
         }
     };
     await readBatch();
+    dirEntry._cachedChildren = results;
     return results;
 }
 
-// Check if a list of children has any file matching current search+filter
+// Check if an entry (or cached child list) has any file matching current search+filter
 async function hasVisibleLocalContent(entry, cachedChildren = null) {
     if (!entry.isDirectory) {
         return shouldDisplay(entry.name);
@@ -505,7 +508,7 @@ async function handleDrop(e) {
 }
 
 document.getElementById('file-input').addEventListener('change', handleFileSelect);
-document.querySelectorAll('input[name="filter"]').forEach(r => r.onchange = reloadTree);
+document.querySelectorAll('input[name="filter"]').forEach(r => r.addEventListener('change', reloadTree));
 
 [sidebar, preview].forEach(el => {
     el.addEventListener("dragover", e => e.preventDefault());
