@@ -315,59 +315,49 @@ function hasVisibleVirtualContent(vFolder) {
     return false;
 }
 
-// FIX: Async version of hasVisibleContent for real filesystem entries
-async function hasVisibleLocalContent(entry) {
+// Read all children of a directory entry into a flat array (one-shot cursor)
+async function readAllEntries(dirEntry) {
+    const results = [];
+    const reader = dirEntry.createReader();
+    const readBatch = async () => {
+        const batch = await new Promise(res => reader.readEntries(res));
+        if (batch.length > 0) {
+            results.push(...batch);
+            await readBatch();
+        }
+    };
+    await readBatch();
+    return results;
+}
+
+// Check if a list of children has any file matching current search+filter
+async function hasVisibleLocalContent(entry, cachedChildren = null) {
     if (!entry.isDirectory) {
         return shouldDisplay(entry.name);
     }
-    const reader = entry.createReader();
-    const checkAllBatches = async () => {
-        const batch = await new Promise(res => reader.readEntries(res));
-        if (batch.length === 0) return false;
-        for (const subEntry of batch) {
-            if (await hasVisibleLocalContent(subEntry)) return true;
+    const children = cachedChildren !== null ? cachedChildren : await readAllEntries(entry);
+    for (const child of children) {
+        if (!child.isDirectory) {
+            if (shouldDisplay(child.name)) return true;
+        } else {
+            if (await hasVisibleLocalContent(child)) return true;
         }
-        return await checkAllBatches();
-    };
-    return await checkAllBatches();
-}
-
-async function checkVisibility(entry) {
-    if (!entry.isDirectory) {
-        return shouldDisplay(entry.name);
     }
-    const reader = entry.createReader();
-    const checkAllBatches = async () => {
-        const batch = await new Promise(res => reader.readEntries(res));
-        if (batch.length === 0) return false;
-        for (const subEntry of batch) {
-            if (await checkVisibility(subEntry)) return true;
-        }
-        return await checkAllBatches();
-    };
-    return await checkAllBatches();
+    return false;
 }
 
-async function renderEntry(entry, parentEl, level, renderId) {
+async function renderEntry(entry, parentEl, level, renderId, cachedChildren = null) {
     const pathKey = entry.fullPath || entry.name;
-    
-    if (entry.isDirectory) {
-        // FIX: Check visibility before rendering — hides empty folders during search
-        const isVisible = await hasVisibleLocalContent(entry);
-        if (renderId !== currentRenderId) return;
-        if (!isVisible) return;
 
-        let allRaw = [];
-        const reader = entry.createReader();
-        const readAll = async () => {
-            const entries = await new Promise(res => reader.readEntries(res));
-            if (entries.length > 0) {
-                allRaw = allRaw.concat(entries);
-                await readAll();
-            }
-        };
-        await readAll();
-        if (renderId !== currentRenderId) return; 
+    if (entry.isDirectory) {
+        // Read entries ONCE — reuse for both visibility check and rendering
+        // (FileSystemDirectoryReader is a one-shot cursor; reading it twice gives empty results)
+        const allRaw = cachedChildren !== null ? cachedChildren : await readAllEntries(entry);
+        if (renderId !== currentRenderId) return;
+
+        const isVisible = await hasVisibleLocalContent(entry, allRaw);
+        if (renderId !== currentRenderId) return;
+        if (!isVisible) return; 
 
         const container = document.createElement("div");
         const header = document.createElement("div");
