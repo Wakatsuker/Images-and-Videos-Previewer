@@ -11,15 +11,26 @@ body {
 /* Sidebar & Layout */
 #sidebar { 
     width: 320px; 
-    min-width: 290px; 
+    min-width: 250px; 
     max-width: 600px; 
     display: flex; 
     flex-direction: column; 
     background: #1a1a1a; 
     border-right: 2px solid #333;
     touch-action: pan-y; 
-    overflow-y: auto; 
+    overflow-y: auto;
+    overflow-x: hidden;
     transition: background 0.2s; 
+}
+
+#tree-container {
+    overflow-x: hidden;
+    min-width: 0;
+}
+
+#tree {
+    min-width: 0;
+    overflow-x: hidden;
 }
 
 #sidebar.drag-over { background: #252525; border-right-color: #007bff; }
@@ -50,13 +61,39 @@ body {
     cursor: pointer; 
     display: flex; 
     align-items: center; 
-    gap: 8px; 
-    padding: 6px 8px; 
+    gap: 6px; 
+    padding: 6px 8px;
+    padding-right: 4px;
     border-radius: 4px; 
-    transition: 0.1s; 
-    white-space: nowrap; 
-    overflow: hidden; 
-    text-overflow: ellipsis; 
+    transition: 0.1s;
+    box-sizing: border-box;
+    /* Don't set width:100% here — the inline paddingLeft style adds to it and overflows.
+       Instead let the flex parent stretch us, and clip with overflow:hidden. */
+    max-width: 100%;
+    overflow: hidden;
+}
+
+/* Icon spans never shrink */
+.folder > span.arrow,
+.file > span:first-child {
+    flex-shrink: 0;
+}
+
+/* Name span: takes remaining space and truncates — never overflows */
+.folder > span:not(.remove-btn):not(.arrow):not(.badge):not(.badge-zip):not(.badge-batch),
+.file > span:nth-child(2) {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+/* Remove button never shrinks, always visible at the right */
+.folder > .remove-btn,
+.file > .remove-btn {
+    flex-shrink: 0;
 }
 
 .folder:hover, .file:hover { background: #333; }
@@ -114,8 +151,8 @@ body {
 }
 
 #preview img, #preview video, #preview audio { 
-    max-width: 100%; 
-    max-height: 100%; 
+    max-width: 90%; 
+    max-height: 90%; 
     border-radius: 4px; 
     box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
 }
@@ -315,11 +352,7 @@ video {
     transition: transform 0.2s;
 }
 
-/* FIX: pointer-events: none was blocking ALL spans including .remove-btn */
-/* Only disable pointer events on non-interactive label spans */
-.folder > span:not(.remove-btn):not(.arrow):not(.badge):not(.badge-zip):not(.badge-batch) {
-    pointer-events: none;
-}
+
 
 /* FIX: Resizer — was completely invisible/unclickable due to missing dimensions */
 #resizer {
