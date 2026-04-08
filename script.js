@@ -115,21 +115,10 @@ function showPreview(blob, name, fileElement = null) {
             const btn = document.createElement("button");
             btn.className = `hover-nav ${isNext ? 'hover-next' : 'hover-prev'}`;
             btn.innerHTML = isNext ? "›" : "‹";
-            
-            const targetIdx = isNext ? currentIndex + 1 : currentIndex - 1;
-            if (targetIdx < 0 || targetIdx >= currentFileList.length) {
-                btn.style.display = "none";
-                return btn;
-            }
-
             btn.onpointerdown = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const targetEl = currentFileList[targetIdx];
-                if (targetEl) {
-                    targetEl.click();
-                    targetEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-                }
+                navigateFiles(isNext ? 1 : -1);
             };
             return btn;
         };
@@ -256,10 +245,8 @@ function renderVirtualFolder(vFolder, containerEl, level, archive) {
         const fHeader = document.createElement("div");
         fHeader.className = "folder";
         fHeader.style.paddingLeft = (level * 12) + "px";
-        
         const isBatch = subV.isBatch ? `<span class="badge badge-batch">BATCH</span>` : "";
         const icon = subV.isBatch ? "" : "📁 "; 
-        
         fHeader.innerHTML = `<span class="arrow">▶</span>${isBatch}<span>${icon}${name}</span>`;
         const fContent = document.createElement("div");
         fContent.style.display = "none";
@@ -429,6 +416,108 @@ async function renderEntry(entry, parentEl, level, renderId, cachedChildren = nu
             showPreview(f, f.name, el);
         };
         parentEl.appendChild(el);
+    }
+}
+
+
+// ─────────────────────────────────────────────
+// CROSS-FOLDER NAVIGATION
+// ─────────────────────────────────────────────
+
+// Expand a folder row if it's collapsed, then return a promise that resolves
+// after the DOM has updated with its children.
+function ensureFolderOpen(folderEl) {
+    const arrow = folderEl.querySelector('.arrow');
+    const isOpen = arrow && arrow.style.transform === 'rotate(90deg)';
+    if (!isOpen) {
+        folderEl.click(); // triggers the existing expand logic
+        // Wait two frames for async renderEntry to populate children
+        return new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+    }
+    return Promise.resolve();
+}
+
+// Walk forward (delta=1) or backward (delta=-1) through ALL files in the tree,
+// auto-expanding folders as needed so we can cross folder boundaries.
+async function navigateFiles(delta) {
+    // Rebuild currentFileList from whatever is currently visible in DOM
+    currentFileList = Array.from(document.querySelectorAll('.file'));
+    let idx = currentIndex;
+
+    // Try the simple case first: target is already in the DOM
+    const simpleTarget = currentFileList[idx + delta];
+    if (simpleTarget) {
+        simpleTarget.click();
+        simpleTarget.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        return;
+    }
+
+    // Target not in DOM — we need to find and expand the next/prev folder
+    // that contains files, then navigate into it.
+    // Strategy: look at the currently selected file's ancestor containers,
+    // then walk siblings to find the next container with a folder that can be expanded.
+
+    const currentEl = currentFileList[idx];
+    if (!currentEl) return;
+
+    // Find all folder headers that are currently COLLAPSED
+    // and appear after (delta=1) or before (delta=-1) the current file in DOM order
+    const allNodes = Array.from(document.querySelectorAll('.folder, .file'));
+    const currentPos = allNodes.indexOf(currentEl);
+
+    const candidates = delta === 1
+        ? allNodes.slice(currentPos + 1)
+        : allNodes.slice(0, currentPos).reverse();
+
+    for (const node of candidates) {
+        if (!node.classList.contains('folder')) continue;
+        const arrow = node.querySelector('.arrow');
+        const isClosed = arrow && arrow.style.transform !== 'rotate(90deg)';
+
+        if (isClosed) {
+            // Expand it and wait for children to render
+            await ensureFolderOpen(node);
+            // Now grab the first/last file inside it
+            const newFiles = Array.from(document.querySelectorAll('.file'));
+            const nodePos = Array.from(document.querySelectorAll('.folder, .file')).indexOf(node);
+            const filesAfterNode = delta === 1
+                ? newFiles.filter(f => {
+                    const pos = Array.from(document.querySelectorAll('.folder, .file')).indexOf(f);
+                    return pos > nodePos;
+                })
+                : newFiles.filter(f => {
+                    const pos = Array.from(document.querySelectorAll('.folder, .file')).indexOf(f);
+                    return pos < nodePos;
+                }).reverse();
+
+            if (filesAfterNode.length > 0) {
+                const target = filesAfterNode[0];
+                target.click();
+                target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                return;
+            }
+        } else if (!isClosed) {
+            // Folder is open — check if there are files directly inside it
+            // that come after/before currentPos
+            const newFiles = Array.from(document.querySelectorAll('.file'));
+            const nodeAllPos = Array.from(document.querySelectorAll('.folder, .file')).indexOf(node);
+            const filesNearNode = delta === 1
+                ? newFiles.filter(f => {
+                    const p = Array.from(document.querySelectorAll('.folder, .file')).indexOf(f);
+                    return p > currentPos && p > nodeAllPos;
+                })
+                : newFiles.filter(f => {
+                    const p = Array.from(document.querySelectorAll('.folder, .file')).indexOf(f);
+                    return p < currentPos && p < nodeAllPos;
+                }).reverse();
+
+            if (filesNearNode.length > 0) {
+                const target = filesNearNode[0];
+                target.click();
+                target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                return;
+            }
+        }
     }
 }
 
