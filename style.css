@@ -30,7 +30,7 @@ body {
 
 #tree {
     min-width: 0;
-    overflow-x: hidden;
+    overflow: hidden;
 }
 
 #sidebar.drag-over { background: #252525; border-right-color: #007bff; }
@@ -62,24 +62,22 @@ body {
     display: flex; 
     align-items: center; 
     gap: 6px; 
-    padding: 6px 8px;
-    padding-right: 4px;
+    /* paddingLeft is set inline by JS for indentation — use padding shorthand only for top/bottom/right */
+    padding: 6px 8px 6px 0;
     border-radius: 4px; 
     transition: 0.1s;
-    box-sizing: border-box;
-    /* Don't set width:100% here — the inline paddingLeft style adds to it and overflows.
-       Instead let the flex parent stretch us, and clip with overflow:hidden. */
-    max-width: 100%;
-    overflow: hidden;
+    /* min-width:0 is critical — without it flex items won't shrink below content size */
+    min-width: 0;
 }
 
-/* Icon spans never shrink */
+/* Icon spans (arrow, emoji) never shrink */
 .folder > span.arrow,
+.folder > span:not(.remove-btn):not(.arrow):not(.badge):not(.badge-zip):not(.badge-batch):first-of-type,
 .file > span:first-child {
     flex-shrink: 0;
 }
 
-/* Name span: takes remaining space and truncates — never overflows */
+/* Name span: takes all remaining space and truncates with ellipsis */
 .folder > span:not(.remove-btn):not(.arrow):not(.badge):not(.badge-zip):not(.badge-batch),
 .file > span:nth-child(2) {
     flex: 1 1 0;
@@ -90,10 +88,11 @@ body {
     pointer-events: none;
 }
 
-/* Remove button never shrinks, always visible at the right */
+/* Remove button: never shrinks, always pinned to the right */
 .folder > .remove-btn,
 .file > .remove-btn {
     flex-shrink: 0;
+    margin-left: auto;
 }
 
 .folder:hover, .file:hover { background: #333; }
@@ -216,7 +215,7 @@ video {
 @media (hover: hover) {
     .hover-nav:hover {
         opacity: 1;
-        background: rgba(0, 0, 0, 0.4);
+        background: rgba(80, 77, 77, 0.4);
     }
 }
 
@@ -365,4 +364,11 @@ video {
 
 #resizer:hover, #resizer:active {
     background: #007bff;
+}
+
+/* Indent spacer — shrinks to its exact width, never grows, invisible */
+.indent-spacer {
+    display: inline-block;
+    flex-shrink: 0;
+    height: 1px;
 }
